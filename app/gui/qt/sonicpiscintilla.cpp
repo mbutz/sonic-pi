@@ -3,11 +3,11 @@
 // Full project source: https://github.com/samaaron/sonic-pi
 // License: https://github.com/samaaron/sonic-pi/blob/master/LICENSE.md
 //
-// Copyright 2013, 2014 by Sam Aaron (http://sam.aaron.name).
+// Copyright 2013, 2014, 2015, 2016 by Sam Aaron (http://sam.aaron.name).
 // All rights reserved.
 //
-// Permission is granted for use, copying, modification, distribution,
-// and distribution of modified versions of this work as long as this
+// Permission is granted for use, copying, modification, and
+// distribution of modified versions of this work as long as this
 // notice is included.
 //++
 
@@ -132,7 +132,7 @@ SonicPiScintilla::SonicPiScintilla(SonicPiLexer *lexer, SonicPiTheme *theme)
   setMarginsForegroundColor(theme->color("MarginForeground"));
   setMarginsFont(QFont("Menlo", 15, -1, true));
   setUtf8(true);
-  setText("#loading...");
+  setText("# Loading previous buffer contents. Please wait...");
   setLexer((QsciLexer *)lexer);
 
   markerDefine(RightArrow, 8);
@@ -204,7 +204,7 @@ void SonicPiScintilla::cutLineFromPoint()
   int linenum, index;
   getCursorPosition(&linenum, &index);
 
-  if (text(linenum) == "\n")
+  if (text(linenum).mid(index).contains(QRegExp("^\\s*\\n")))
   {
     setSelection(linenum, index, linenum + 1, 0);
     SendScintilla(SCI_CUT);
@@ -212,6 +212,11 @@ void SonicPiScintilla::cutLineFromPoint()
     {
       //  SendScintilla(SCI_CLEARSELECTIONS);
       int pos = SendScintilla(SCI_GETCURRENTPOS);
+
+      while (text(linenum).endsWith(",\n")) {
+        linenum++;
+        moveLines(1);
+      }
       SendScintilla(SCI_LINEEND);
       SendScintilla(SCI_SETANCHOR, pos);
       SendScintilla(SCI_CUT);

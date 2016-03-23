@@ -3,7 +3,7 @@
 # Full project source: https://github.com/samaaron/sonic-pi
 # License: https://github.com/samaaron/sonic-pi/blob/master/LICENSE.md
 #
-# Copyright 2013, 2014, 2015 by Sam Aaron (http://sam.aaron.name).
+# Copyright 2013, 2014, 2015, 2016 by Sam Aaron (http://sam.aaron.name).
 # All rights reserved.
 #
 # Permission is granted for use, copying, modification and distribution
@@ -335,7 +335,8 @@ mc_teleport 40, 50, 60  # The player will be moved to the position with coords:
 
 
 
-      def mc_message(msg)
+      def mc_message(*msgs)
+        msg = msgs.map{|m| m.to_s}.join(" ")
         Minecraft.world_send "chat.post(#{msg})"
         msg
       end
@@ -345,7 +346,7 @@ mc_teleport 40, 50, 60  # The player will be moved to the position with coords:
           args:           [[:msg, :string]],
           opts:           nil,
           accepts_block:  false,
-          doc:            "Post contents of `msg` on the Minecraft chat display",
+          doc:            "Post contents of `msg` on the Minecraft chat display. You may pass multiple arguments and all will be joined to form a single message (with spaces).",
           examples:       ["mc_message \"Hello from Sonic Pi\" #=> Displays \"Hello from Sonic Pi\" on Minecraft's chat display" ]
 
 

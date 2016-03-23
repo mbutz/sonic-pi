@@ -4,7 +4,7 @@
 # Full project source: https://github.com/samaaron/sonic-pi
 # License: https://github.com/samaaron/sonic-pi/blob/master/LICENSE.md
 #
-# Copyright 2013, 2014, 2015 by Sam Aaron (http://sam.aaron.name).
+# Copyright 2013, 2014, 2015, 2016 by Sam Aaron (http://sam.aaron.name).
 # All rights reserved.
 #
 # Permission is granted for use, copying, modification, and
@@ -17,6 +17,8 @@ raise "Sonic Pi requires Ruby 1.9.3+ to be installed. You are using version #{RU
 ## This core file sets up the load path and applies any necessary monkeypatches.
 
 ## Ensure native lib dir is available
+require 'rbconfig'
+ruby_api = RbConfig::CONFIG['ruby_version']
 os = case RUBY_PLATFORM
      when /.*arm.*-linux.*/
        :raspberry
@@ -29,7 +31,28 @@ os = case RUBY_PLATFORM
      else
        RUBY_PLATFORM
      end
-$:.unshift "#{File.expand_path("../rb-native", __FILE__)}/#{os}/#{RUBY_VERSION}p#{RUBY_PATCHLEVEL}/"
+ruby_gem_native_path = "#{File.expand_path("../rb-native", __FILE__)}"
+ruby_gem_api_path = "#{ruby_gem_native_path}/#{os}/#{ruby_api}"
+
+unless File.directory?(ruby_gem_api_path)
+  STDERR.puts "*** COULD NOT FIND RUBY GEMS REQUIRED BY SONIC PI ***"
+  STDERR.puts "Directory '#{ruby_gem_api_path}' not found."
+  STDERR.puts "Your ruby interpreter is '#{RbConfig.ruby}', supporting ruby api #{ruby_api}."
+  Dir.entries("#{ruby_gem_native_path}/#{os}/")
+    .select { |d| (File.directory?("#{ruby_gem_native_path}/#{os}/#{d}") && d != '.' && d != '..') }
+    .each do |installed_ruby_api|
+      STDERR.puts "The Sonic Pi on your computer was installed for ruby api #{installed_ruby_api}."
+    end
+  STDERR.puts "Please refer to the Sonic Pi install instructions."
+  STDERR.puts "For installation, you need to run 'app/server/bin/compile-extensions.rb'."
+  STDERR.puts "If you change or upgrade your ruby interpreter later, you may need to run it again."
+
+  raise "Could not access ruby gem directory"
+end
+
+$:.unshift ruby_gem_api_path
+
+require 'win32/process' if os == :windows
 
 ## Ensure all libs in vendor directory are available
 Dir["#{File.expand_path("../vendor", __FILE__)}/*/lib/"].each do |vendor_lib|
@@ -39,18 +62,22 @@ end
 begin
   require 'did_you_mean'
 rescue LoadError
-  warn "Could not load did_you_mean"
+  warn "Non-critical error: Could not load did_you_mean"
 end
 
-require 'osc-ruby'
 require 'hamster/vector'
 require 'wavefile'
 
 module SonicPi
   module Core
     module SPRand
+      # use FHS directory scheme:
+      # check if Sonic Pi's ruby server is not running inside the
+      # user's home directory, but is installed in /usr/lib/sonic-pi
+      # on Linux from a distribution's package
+      random_numbers_path = File.dirname(__FILE__).start_with?("/usr/lib/sonic-pi") ? "/usr/share/sonic-pi" : "../../../etc"
       # Read in same random numbers as server for random stream sync
-      @@random_numbers = ::WaveFile::Reader.new(File.expand_path("../../../etc/buffers/rand-stream.wav", __FILE__), ::WaveFile::Format.new(:mono, :float, 44100)).read(441000).samples.freeze
+      @@random_numbers = ::WaveFile::Reader.new(File.expand_path("#{random_numbers_path}/buffers/rand-stream.wav", __FILE__), ::WaveFile::Format.new(:mono, :float, 44100)).read(441000).samples.freeze
 
       def self.to_a
         @@random_numbers
@@ -88,6 +115,11 @@ module SonicPi
 
       def self.get_idx
         Thread.current.thread_variable_get(:sonic_pi_spider_random_gen_idx) || 0
+      end
+
+      def self.get_seed_plus_idx
+        (Thread.current.thread_variable_get(:sonic_pi_spider_random_gen_idx) || 0) +
+          Thread.current.thread_variable_get(:sonic_pi_spider_random_gen_seed) || 0
       end
 
       def self.rand!(max=1, idx=nil)
@@ -209,7 +241,6 @@ module SonicPi
     class SPVector < Hamster::Vector
       include TLMixin
       def initialize(list)
-        raise EmptyVectorError, "Cannot create an empty vector" if list.empty?
         super
       end
 
@@ -221,8 +252,36 @@ module SonicPi
         self.class.new(a)
       end
 
+      def list_diff(other)
+        ___sp_preserve_vec_kind(self.to_a - other.to_a)
+      end
+
+      def list_concat(other)
+        ___sp_preserve_vec_kind(self.to_a + other.to_a)
+      end
+
+      def -(other)
+        if other.is_a?(Array) || other.is_a?(SPVector)
+          return list_diff(other)
+        else
+          o = other.to_f
+          return self.map{|el| el - o}
+        end
+      end
+
+      def +(other)
+        if other.is_a?(Array) || other.is_a?(SPVector)
+          return list_concat(other)
+        else
+          o = other.to_f
+          return self.map{|el| el + o}
+        end
+      end
+
       def [](idx, len=(missing_length = true))
+        return nil unless idx
         raise InvalidIndexError, "Invalid index: #{idx.inspect}, was expecting a number or range" unless idx && (idx.is_a?(Numeric) || idx.is_a?(Range))
+        return nil if self.empty?
         if idx.is_a?(Numeric) && missing_length
           idx = map_index(idx)
           super idx
@@ -239,6 +298,10 @@ module SonicPi
         self[SonicPi::Core::SPRand.rand_i!(self.size)]
       end
 
+      def sample
+        choose
+      end
+
       def ring
         SonicPi::Core::RingVector.new(self)
       end
@@ -249,6 +312,78 @@ module SonicPi
 
       def to_s
         inspect
+      end
+
+      def reflect(n=1)
+        res = self + self.reverse.drop(1)
+        res = res + (res.drop(1) * (n - 1)) if n > 1
+        res
+      end
+
+      def mirror(n=1)
+        (self + self.reverse) * n
+      end
+
+      def repeat(n=2)
+        n = 1 if n < 1
+        self * n
+      end
+
+      def drop_last(n=1)
+        self[0...(size-n)]
+      end
+
+      def take_last(n=1)
+        self if n >= size
+        self[(size-n)..-1]
+      end
+
+      def butlast
+        drop_last(1)
+      end
+
+      def take(n)
+        return self.reverse.take(-n) if n <= 0
+        return super if n <= @size
+        self + take(n - @size)
+      end
+
+      def drop(n)
+        return [].ring if n >= @size
+        super
+      end
+
+      def pick(n=nil, *opts)
+        # mangle args to extract nice behaviour
+        if !n.is_a?(Numeric) && opts.empty?
+          opts = n
+          n = nil
+        else
+          opts = opts[0]
+        end
+
+        if opts.is_a?(Hash)
+          s = opts[:skip]
+        else
+          s = nil
+        end
+
+        n = @size unless n
+        raise "pick requires n to be a number, got: #{n.inspect}" unless n.is_a? Numeric
+
+        res = []
+        if s
+          raise "skip: opt needs to be a number, got: #{s.inspect}" unless s.is_a? Numeric
+          n.times do
+            SonicPi::Core::SPRand.inc_idx!(s)
+            res << self.choose
+          end
+        else
+          n.times do
+            res << self.choose
+          end
+        end
+        res.ring
       end
 
       def inspect
@@ -272,6 +407,10 @@ module SonicPi
           end
         end
         ___sp_preserve_vec_kind(res)
+      end
+
+      def map_index(idx)
+        idx
       end
     end
 
@@ -339,318 +478,6 @@ class Float
     self.to_i.times do |idx|
       yield idx.to_f
     end
-  end
-end
-
-module OSC
-  class ServerOverTcp < Server
-
-    def initialize(port)
-      puts "port #{port}"
-      @server = TCPServer.open(port)
-      @matchers = []
-      @queue = Queue.new
-    end
-
-    def safe_detector
-      @server.listen(5)
-      loop do
-        @so ||= @server.accept
-        begin
-          read_all = false
-          while(!read_all) do
-            readfds, _, _ = select([@so], nil, nil, 0.1)
-            if readfds
-              packet_size = @so.recv(4)
-              if(packet_size.length < 4)
-                if(packet_size.length == 0)
-                  puts "Connection dropped"
-                else
-                  puts "Failed to read full 4 bytes. Length: #{packet_size.length} Content: #{packet_size.unpack("b*")}"
-                end
-                @so.close
-                @so = nil
-                break
-              else
-                packet_size.force_encoding("BINARY")
-                bytes_expected = packet_size.unpack('N')[0]
-                bytes_read = 0
-                osc_data = ""
-                while(bytes_read < bytes_expected) do
-                  result = @so.recv(bytes_expected)
-                  #puts "bytes expected: #{bytes_expected} bytes read: #{result.length}"
-                  if result.length <= 0
-                    puts "Connection closed by client"
-                    @so.close
-                    @so = nil
-                    break
-                  else
-                    #puts "message: #{result}"
-                    bytes_read += result.length
-                    osc_data += result
-                    if bytes_read == bytes_expected
-                      read_all = true
-                    end
-                  end
-                end
-              end
-            end
-          end
-
-          if read_all
-            OSCPacket.messages_from_network( osc_data ).each do |message|
-              @queue.push(message)
-            end
-          end
-        rescue Exception => e
-          puts e
-          Kernel.puts e.message
-        end
-      end
-    end
-
-    def stop
-      @so.close if @so
-      @server.close
-    end
-
-    def safe_run
-      Thread.fork do
-        begin
-          dispatcher
-        rescue Exception => e
-          Kernel.puts e.message
-          Kernel.puts e.backtrace.inspect
-        end
-      end
-      safe_detector
-    end
-
-    def run
-      start_dispatcher
-
-      start_detector
-    end
-
-    def add_method( address_pattern, &proc )
-      matcher = AddressPattern.new( address_pattern )
-
-      @matchers << [matcher, proc]
-    end
-
-private
-
-    def dispatch_message( message )
-      diff = ( message.time || 0 ) - Time.now.to_ntp
-
-      if diff <= 0
-        sendmesg( message)
-      else # spawn a thread to wait until it's time
-        Thread.fork do
-          sleep( diff )
-          sendmesg( mesg )
-          Thread.exit
-        end
-      end
-    end
-
-    def sendmesg(mesg)
-      @matchers.each do |matcher, proc|
-        if matcher.match?( mesg.address )
-          proc.call( mesg )
-        end
-      end
-    end
-
-
-  end
-
-
-  class ClientOverTcp
-    def initialize(host, port)
-      @host, @port = host, port
-    end
-
-    def send_raw(mesg)
-      so.send(mesg, 0)
-    end
-
-    def send(mesg)
-      so.send(mesg.encode, 0)
-    end
-
-    def stop
-      so.close
-    end
-
-    def so
-      while(!@so) do
-        begin
-          @so = TCPSocket.new(@host, @port)
-        rescue Errno::ECONNREFUSED => e
-          puts "Waiting for OSC server..."
-          sleep(1)
-        end
-      end
-      @so
-    end
-
-  end
-end
-
-#Monkeypatch osc-ruby to add sending skills to Servers
-#https://github.com/samaaron/osc-ruby/commit/bfc31a709cbe2e196011e5e1420827bd0fc0e1a8
-#and other improvements
-module OSC
-
-  class Client
-    def send_raw(mesg)
-      @so.send(mesg, 0)
-    end
-  end
-
-  class Server
-    def send(msg, address, port)
-      @socket.send msg.encode, 0, address, port
-    end
-
-    def send_raw(msg, address, port)
-      @socket.send msg, 0, address, port
-    end
-
-    def initialize(port, open=false)
-      @socket = UDPSocket.new
-      if open
-        @socket.bind('', port )
-      else
-        @socket.bind('localhost', port )
-      end
-      @matchers = []
-      @queue = Queue.new
-    end
-
-    def safe_detector
-      loop do
-        begin
-          osc_data, network = @socket.recvfrom( 16384 )
-          ip_info = Array.new
-          ip_info << network[1]
-          ip_info.concat(network[2].split('.'))
-          OSCPacket.messages_from_network( osc_data, ip_info ).each do |message|
-            @queue.push(message)
-          end
-        rescue Exception => e
-          Kernel.puts e.message
-        end
-      end
-    end
-
-    def safe_run
-      Thread.fork do
-        begin
-          dispatcher
-        rescue Exception => e
-          Kernel.puts e.message
-          Kernel.puts e.backtrace.inspect
-        end
-      end
-
-      safe_detector
-    end
-  end
-
-  class OSCDouble64 < OSCArgument
-    def tag() 'd' end
-    def encode() [@val].pack('G').force_encoding("BINARY") end
-  end
-
-  class OSCInt64 < OSCArgument
-    def tag() 'h' end
-    def encode() [@val].pack('q>').force_encoding("BINARY") end
-  end
-
-  class OSCPacket
-
-    def self.messages_from_network( string, ip_info=nil )
-      messages = []
-      osc = new( string )
-
-      if osc.bundle?
-        osc.get_string #=> bundle
-        time = osc.get_timestamp
-
-        osc.get_bundle_messages.each do | message |
-          begin
-            msg = decode_simple_message( time, OSCPacket.new( message ) )
-            if ip_info
-              # Append info for the ip address
-              msg.ip_port = ip_info.shift
-              msg.ip_address = ip_info.join(".")
-            end
-            messages << msg
-          rescue Exception => e
-            Kernel.puts e.message
-            Kernel.puts e.backtrace.inspect
-          end
-        end
-
-      else
-        begin
-          msg = decode_simple_message( time, osc )
-          if ip_info
-            # Append info for the ip address
-            msg.ip_port = ip_info.shift
-            msg.ip_address = ip_info.join(".")
-          end
-          messages << msg
-        rescue Exception => e
-          Kernel.puts e.message
-          Kernel.puts e.backtrace.inspect
-        end
-      end
-      return messages
-    end
-
-    def initialize( string )
-      @packet = NetworkPacket.new( string )
-
-      @types = {
-        "i" => lambda{OSCInt32.new(    get_int32   )},
-        "f" => lambda{OSCFloat32.new(  get_float32 )},
-        "s" => lambda{OSCString.new(   get_string  )},
-        "b" => lambda{OSCBlob.new(     get_blob    )},
-        "d" => lambda{OSCDouble64.new( get_double64)},
-        "h" => lambda{OSCInt64.new(    get_int64   )}
-      }
-    end
-
-    def get_arguments
-      if @packet.getc == ?,
-
-        tags = get_string
-        args = []
-
-        tags.scan(/./) do | tag |
-          type_handler = @types[tag]
-          raise "Unknown OSC type: #{tag}" unless type_handler
-          args << type_handler.call
-        end
-        args
-      end
-    end
-
-    def get_double64
-      f = @packet.getn(8).unpack('G')[0]
-      @packet.skip_padding
-      f
-    end
-
-    def get_int64
-      f = @packet.getn(8).unpack('q>')[0]
-      @packet.skip_padding
-      f
-    end
-
   end
 end
 
@@ -723,6 +550,17 @@ class Array
 
   def choose
     self[SonicPi::Core::SPRand.rand_i!(self.size)]
+  end
+
+  def pick(n=nil)
+    n = @size unless n
+    raise "pick requires n to be a number, got: #{n.inspect}" unless n.is_a? Numeric
+
+    res = []
+    n.times do
+      res << self.choose
+    end
+    res
   end
 
   alias_method :__orig_sample__, :sample

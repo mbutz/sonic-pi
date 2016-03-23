@@ -1,3 +1,17 @@
+//--
+// This file is part of Sonic Pi: http://sonic-pi.net
+// Full project source: https://github.com/samaaron/sonic-pi
+// License: https://github.com/samaaron/sonic-pi/blob/master/LICENSE.md
+//
+// Copyright 2013, 2014, 2015, 2016 by Sam Aaron (http://sam.aaron.name).
+// All rights reserved.
+//
+// Permission is granted for use, copying, modification, and
+// distribution of modified versions of this work as long as this
+// notice is included.
+//++
+
+
 // OSC stuff
 #include "oscpkt.hh"
 #include "oschandler.h"
@@ -44,16 +58,21 @@ void OscHandler::oscMessage(std::vector<char> buffer){
       }
       else if (msg->match("/info")) {
         std::string s;
-        if (msg->arg().popStr(s).isOkNoMoreArgs()) {
+        int style;
+        if (msg->arg().popInt32(style).popStr(s).isOkNoMoreArgs()) {
           // Evil nasties!
           // See: http://www.qtforum.org/article/26801/qt4-threads-and-widgets.html
 
           QMetaObject::invokeMethod( out, "setTextColor",           Qt::QueuedConnection, Q_ARG(QColor, theme->color("LogInfoForeground")));
+          if(style == 1) {
+          QMetaObject::invokeMethod( out, "setTextBackgroundColor", Qt::QueuedConnection, Q_ARG(QColor, theme->color("LogInfoBackgroundStyle1")));
+          } else {
           QMetaObject::invokeMethod( out, "setTextBackgroundColor", Qt::QueuedConnection, Q_ARG(QColor, theme->color("LogInfoBackground")));
+          }
 
-          QMetaObject::invokeMethod( out, "append",                 Qt::QueuedConnection, Q_ARG(QString, QString::fromStdString("=> " + s + "\n")) );
+          QMetaObject::invokeMethod( out, "appendPlainText",        Qt::QueuedConnection, Q_ARG(QString, QString::fromStdString("=> " + s + "\n")) );
 
-          QMetaObject::invokeMethod( out, "setTextColor",           Qt::QueuedConnection, Q_ARG(QColor, QColor("#5e5e5e")));
+          QMetaObject::invokeMethod( out, "setTextColor",           Qt::QueuedConnection, Q_ARG(QColor, theme->color("LogDefaultForeground")));
           QMetaObject::invokeMethod( out, "setTextBackgroundColor", Qt::QueuedConnection, Q_ARG(QColor, theme->color("LogBackground")));
         } else {
           std::cout << "[GUI] - error: unhandled OSC msg /info "<< std::endl;
@@ -168,9 +187,6 @@ void OscHandler::oscMessage(std::vector<char> buffer){
       else if (msg->match("/ack")) {
         std::string id;
         if (msg->arg().popStr(id).isOkNoMoreArgs()) {
-          if(!server_started) {
-            QMetaObject::invokeMethod(window, "serverStarted", Qt::QueuedConnection);
-          }
           server_started = true;
 
         } else

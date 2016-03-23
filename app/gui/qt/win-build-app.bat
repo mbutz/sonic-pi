@@ -1,8 +1,9 @@
 cd %~dp0
 
 copy /Y ruby_help.tmpl ruby_help.h
-ruby ../../server/bin/qt-doc.rb -o ruby_help.h
+..\..\server\native\windows\ruby\bin\ruby ../../server/bin/qt-doc.rb -o ruby_help.h
 @IF ERRORLEVEL==9009 goto :noruby
+@IF ERRORLEVEL==1 goto :docfail
 
 lrelease SonicPi.pro
 @IF ERRORLEVEL==9009 goto :noqt
@@ -17,6 +18,10 @@ nmake
 nmake install
 cd release
 windeployqt Sonic-Pi.exe -printsupport
+
+@echo Removing faulty english translation file
+if exist translations\qt_en.qm del translations\qt_en.qm
+
 cd ..
 
 @goto :done
@@ -31,6 +36,10 @@ cd ..
 
 :nocl
 @echo Did not find VS2013 tools in your PATH, please start a command prompt from Visual Studio 2013/Visual Studio Tools/VS2013 x86 Native Tools Command Prompt
+@goto :done
+
+:docfail
+@echo qt-doc.rb failed, which means everything else will fail as well -- fix Ruby environment first
 @goto :done
 
 :done

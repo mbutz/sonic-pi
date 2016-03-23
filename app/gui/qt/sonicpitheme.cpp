@@ -1,3 +1,17 @@
+//--
+// This file is part of Sonic Pi: http://sonic-pi.net
+// Full project source: https://github.com/samaaron/sonic-pi
+// License: https://github.com/samaaron/sonic-pi/blob/master/LICENSE.md
+//
+// Copyright 2013, 2014, 2015, 2016 by Sam Aaron (http://sam.aaron.name).
+// All rights reserved.
+//
+// Permission is granted for use, copying, modification, and
+// distribution of modified versions of this work as long as this
+// notice is included.
+//++
+
+
 #include "sonicpitheme.h"
 
 SonicPiTheme::SonicPiTheme(QObject *parent, QSettings *settings, bool dark) : QObject(parent)
@@ -115,6 +129,7 @@ QMap<QString, QString> SonicPiTheme::lightTheme(){
     themeSettings["LogBackground"] = "white";
     themeSettings["LogForeground"] = "black";
     themeSettings["LogInfoBackground"] = "#5e5e5e";
+    themeSettings["LogInfoBackgroundStyle1"] = "DeepPink";
     themeSettings["LogInfoForeground"] = "white";
     themeSettings["LogDefaultForeground"] = "#5e5e5e";
 
@@ -201,6 +216,7 @@ QMap<QString, QString> SonicPiTheme::darkTheme(){
     themeSettings["LogBackground"] = "black";
     themeSettings["LogForeground"] = "white";
     themeSettings["LogInfoBackground"] = "#2c3539";
+    themeSettings["LogInfoBackgroundStyle1"] = "DeepPink";
     themeSettings["LogInfoForeground"] = "white";
     themeSettings["LogDefaultForeground"] = "white";
 

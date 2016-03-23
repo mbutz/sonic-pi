@@ -4,7 +4,7 @@
 # Full project source: https://github.com/samaaron/sonic-pi
 # License: https://github.com/samaaron/sonic-pi/blob/master/LICENSE.md
 #
-# Copyright 2013, 2014, 2015 by Sam Aaron (http://sam.aaron.name).
+# Copyright 2013, 2014, 2015, 2016 by Sam Aaron (http://sam.aaron.name).
 # All rights reserved.
 #
 # Permission is granted for use, copying, modification, and
@@ -14,6 +14,7 @@
 require_relative 'support/docsystem'
 require_relative "../version"
 require_relative "../util"
+require 'active_support/inflector'
 
 ## TODO: create _* equivalents of all fns - for silent (i.e computation) versions
 
@@ -23,6 +24,8 @@ module SonicPi
 
       include SonicPi::Lang::Support::DocSystem
       include SonicPi::Util
+
+      class AssertionError < StandardError ; end
 
       THREAD_RAND_SEED_MAX = 10e20
 
@@ -120,7 +123,7 @@ module SonicPi
       doc name:           :tick,
           introduced:     Version.new(2,6,0),
           summary:        "Increment a tick and return value",
-          args:           [[:value, :number]],
+          args:           [[:key, :symbol]],
           alt_args:       [[[:key, :symbol], [:value, :number]]],
           returns:        :number,
           opts:           {step: "The amount to tick up by. Default is 1.",
@@ -305,6 +308,58 @@ module SonicPi
 
 
 
+      def on(condition, &blk)
+        blk.call if truthy?(condition)
+      end
+      doc name:           :on,
+          introduced:     Version.new(2,10,0),
+          summary:        "Optionally evaluate block",
+          args:           [[:condition, :truthy]],
+          returns:        nil,
+          opts:           nil,
+          accepts_block:  false,
+          doc:            "Optionally evaluate the block depending on the truthiness of the supplied condition. The truthiness rules are as follows: all values are seen as true except for: false, nil and 0. Lambdas will be automatically called and the truthiness of their results used.",
+      examples:       [
+"
+on true do
+  play 70     #=> will play 70 as true is truthy
+end",
+"
+on 1 do
+  play 70     #=> will play 70 as 1 is truthy
+end",
+"
+on 0 do
+  play 70     #=> will *not* play 70 as 0 is not truthy
+end",
+"
+on false do
+  play 70     #=> will *not* play 70 as false is not truthy
+end",
+"
+on nil do
+  play 70     #=> will *not* play 70 as nil is not truthy
+end",
+"
+on lambda{true} do
+  play 70     #=> will play 70 as the lambda returns a truthy value
+end",
+"
+on lambda{false} do
+  play 70     #=> will *not* play 70 as the lambda does not return a truthy value
+end",
+"
+on lambda{[true, false].choose} do
+  play 70     #=> will maybe play 70 depending on the choice in the lambda
+end"
+
+
+
+      ]
+
+
+
+
       def bools(*args)
         args.map do |a|
           if (a == 0) || (not a)
@@ -321,7 +376,7 @@ module SonicPi
           returns:        :ring,
           opts:           nil,
           accepts_block:  false,
-          doc:            "Create a new ring of booleans values from 1s, and 0s which can be easier to write and manipulate in a live setting.",
+          doc:            "Create a new ring of booleans values from 1s and 0s, which can be easier to write and manipulate in a live setting.",
           examples:       [
         "(bools 1, 0)    #=> (ring true, false)",
         "(bools 1, 0, true, false, nil) #=> (ring true, false, true, false, false)"
@@ -460,7 +515,7 @@ module SonicPi
 
   (spread 5, 8)  # The Cuban cinquillo pattern.
 
-  (spread 5, 9)  # A popular ARab rhythm called Agsag-Samai.
+  (spread 5, 9)  # A popular Arab rhythm called Agsag-Samai.
 
   (spread 5, 11) # The metric pattern used by Moussorgsky in Pictures at an
                  # Exhibition
@@ -557,7 +612,7 @@ module SonicPi
         num_slices = args_h[:steps] || 4
         inclusive = args_h[:inclusive]
 
-        raise "Num slices param for fn linear should be a positive non-zero whole number" unless num_slices > 0
+        raise "steps: opt for fn line should be a positive non-zero whole number" unless num_slices > 0
 
         if inclusive
           step_size = (start - finish).abs.to_f / (num_slices - 1)
@@ -580,6 +635,66 @@ module SonicPi
         "(line 0, 4, steps: 4)    #=> (ring 0.0, 1.0, 2.0, 3.0)",
         "(line 5, 0, steps: 5)    #=> (ring 5.0, 4.0, 3.0, 2.0, 1.0)",
         "(line 0, 3, inclusive: true) #=> (ring 0.0, 1.0, 2.0, 3.0)"
+      ]
+
+
+
+
+      def halves(start, num_halves=1)
+        raise "Start value for halves needs to be a number, got: #{start.inspect}" unless start.is_a?(Numeric)
+        start = start.to_f
+        return doubles(start, num_halves * -1) if num_halves < 0
+        a = []
+        val = start
+        num_halves.times do
+          a << val
+          val /= 2.0
+        end
+        a.ring
+      end
+      doc name:           :halves,
+          introduced:     Version.new(2,10,0),
+          summary:        "Create a ring of successive halves",
+          args:           [[:start, :number], [:num_halves, :int]],
+          returns:        :ring,
+          opts:           nil,
+          accepts_block:  false,
+          doc:            "Create a ring containing the results of successive halving of the `start` value. If `num_halves` is negative, will return a ring of `doubles`.",
+          examples:       [
+        "(halves 60, 2)  #=> (ring 60, 30)",
+        "(halves 120, 3) #=> (ring 120, 60, 30)",
+        "(halves 120, 5) #=> (ring 120, 60, 30, 15, 7.5)",
+        "(halves 30, -5) #=> (ring 30, 60, 120, 240, 480)"
+      ]
+
+
+
+
+      def doubles(start, num_doubles=1)
+        raise "Start value for doubles needs to be a number, got: #{start.inspect}" unless start.is_a?(Numeric)
+        return halves(start, num_doubles * -1) if num_doubles < 0
+        start = start.to_f
+        a = []
+        val = start
+        num_doubles.times do
+          a << val
+          val *= 2.0
+        end
+        a.ring
+      end
+      doc name:           :doubles,
+          introduced:     Version.new(2,10,0),
+          summary:        "Create a ring of successive doubles",
+          args:           [[:start, :number], [:num_doubles, :int]],
+          returns:        :ring,
+          opts:           nil,
+          accepts_block:  false,
+          doc:            "Create a ring containing the results of successive doubling of the `start` value. If `num_doubles` is negative, will return a ring of `halves`.",
+          examples:       [
+        "(doubles 60, 2)  #=> (ring 60, 120)",
+        "(doubles 1.5, 3) #=> (ring 1.5, 3, 6)",
+        "(doubles 1.5, 5) #=> (ring 1.5, 3, 6, 12, 24)",
+        "(doubles 100, -4) #=> (ring 100, 50, 25, 12.5)"
       ]
 
 
@@ -675,6 +790,32 @@ module SonicPi
 
 
 
+      def pick(items, n=nil, *args)
+        items.pick(n, *args)
+      end
+      doc name:           :pick,
+          introduced:     Version.new(2,10,0),
+          summary:        "Randomly pick from list (with duplicates)",
+          args:           [[:list, :array], [:n, :number_or_nil]],
+          opts:           {:skip => "Number of rands to skip over with each successive pick"},
+          accepts_block:  false,
+          doc:            "Pick n elements from list or ring. Unlike shuffle, after each element has been picked, it is 'returned' to the list so it may be picked again. This means there may be duplicates in the result. If n is greater than the size of the ring/list then duplicates are guaranteed to be in the result.
+
+If `n` isn't supplied it defaults to the size of the list/ring.",
+         examples:       ["
+puts [1, 2, 3, 4, 5].pick(3) #=> [4, 4, 3]",
+"
+puts (ring 1, 2, 3, 4, 5).pick(3) #=> (ring 4, 4, 3)",
+
+"
+puts (ring 1, 2).pick(5) #=> (ring 2, 2, 1, 1, 1)",
+"
+puts (ring 1, 2, 3).pick #=> (ring 3, 3, 2)"
+      ]
+
+
+
+
       def inc(n)
         n + 1
       end
@@ -716,6 +857,10 @@ module SonicPi
 
         args_h = resolve_synth_opts_hash_or_array(args)
 
+        sync_sym = args_h[:sync]
+
+        raise "livelock detection - live_loop cannot sync with itself - please choose another sync name for live_loop #{name.inspect}" if name == sync_sym
+
         delay = args_h[:delay]
         raise "live_loop's delay: opt must be a number, got #{delay.inspect}" if delay && !delay.is_a?(Numeric)
 
@@ -738,7 +883,7 @@ module SonicPi
           raise "Live loop block must only accept 0 or 1 args"
         end
 
-        in_thread(name: ll_name, delay: delay) do
+        in_thread(name: ll_name, delay: delay, sync: sync_sym) do
           Thread.current.thread_variable_set :sonic_pi__not_inherited__live_loop_auto_cue, auto_cue
           if args_h.has_key?(:init)
             res = args_h[:init]
@@ -747,13 +892,13 @@ module SonicPi
           end
           use_random_seed args_h[:seed] if args_h[:seed]
           loop do
-            t1 = Thread.current.thread_variable_get(:sonic_pi_spider_time)
-            Thread.current.thread_variable_set(:sonic_pi_spider_synced, false)
-            cue name if Thread.current.thread_variable_get :sonic_pi__not_inherited__live_loop_auto_cue
-            res = send(ll_name, res)
+            slept = block_slept? do
+              Thread.current.thread_variable_set(:sonic_pi_spider_synced, false)
+              cue name if Thread.current.thread_variable_get :sonic_pi__not_inherited__live_loop_auto_cue
+              res = send(ll_name, res)
+            end
 
-            t2 = Thread.current.thread_variable_get(:sonic_pi_spider_time)
-            raise "Live loop #{name.to_sym.inspect} did not sleep!" if (t1 == t2) && !Thread.current.thread_variable_get(:sonic_pi_spider_synced)
+            raise "Live loop #{name.to_sym.inspect} did not sleep!" unless slept or Thread.current.thread_variable_get(:sonic_pi_spider_synced)
           end
         end
 
@@ -768,13 +913,17 @@ module SonicPi
           opts:           {:init     => "initial value for optional block arg",
                            :auto_cue => "enable or disable automatic cue (default is true)",
                            :delay    => "Initial delay in beats before the live_loop starts. Default is 0.",
+                           :sync     => "Initial sync symbol. Will sync with this symbol before the live_loop starts.",
                            :seed     => "override initial random generator seed before starting loop."
       },
           accepts_block:  true,
           requires_block: true,
           async_block:    true,
           intro_fn:       true,
-          doc:            "Run the block in a new thread with the given name, and loop it forever.  Also sends a `cue` with the same name each time the block runs. If the block is given a parameter, this is given the result of the last run of the loop (with initial value either being `0` or an init arg).",
+          doc:            "Run the block in a new thread with the given name, and loop it forever.  Also sends a `cue` with the same name each time the block runs. If the block is given a parameter, this is given the result of the last run of the loop (with initial value either being `0` or an init arg).
+
+It is possible to delay the initial trigger of the live_loop on creation with both the `delay:` and `sync:` opts. See their respective docstrings. If both `delay:` and `sync:` are specified, on initial live_loop creation first the delay will be honoured and then the sync.
+",
           examples:       ["
 live_loop :ping do
   sample :elec_ping
@@ -790,6 +939,86 @@ live_loop :foo do |a|  # pass a param (a) to the block (inits to 0)
 end
   "   ]
 
+
+      def block_duration(&block)
+        t1 = Thread.current.thread_variable_get(:sonic_pi_spider_time)
+        block.call
+        t2 = Thread.current.thread_variable_get(:sonic_pi_spider_time)
+        t2 - t1
+      end
+      doc name:           :block_duration,
+          introduced:     Version.new(2,9,0),
+          summary:        "Return block duration",
+          doc:            "Given a block, runs it and returns the amount of time that has passed. This time is in seconds and is not scaled to the current BPM. Any threads spawned in the block are not accounted for.",
+          args:           [[]],
+          opts:           nil,
+          accepts_block:  true,
+          requires_block: true,
+          async_block:    false,
+          examples: ["
+dur = block_duration do
+  play 50
+  sleep 1
+  play 62
+  sleep 2
+end
+
+puts dur #=> Returns 3 as 3 seconds have passed within the block",
+"use_bpm 120
+dur = block_duration do
+  play 50
+  sleep 1
+  play 62
+  sleep 2
+end
+
+puts dur #=> Returns 1.5 as 1.5 seconds have passed within the block
+         #   (due to the BPM being 120)"]
+
+
+
+
+      def block_slept?(&block)
+        dur = block_duration(&block)
+        dur > 0
+      end
+      doc name:           :block_slept?,
+          introduced:     Version.new(2,9,0),
+          summary:        "Determine if block contains sleep time",
+          doc:            "Given a block, runs it and returns whether or not the block contained sleeps or syncs",
+          args:           [[]],
+          opts:           nil,
+          accepts_block:  true,
+          requires_block: true,
+          async_block:    false,
+          examples: ["
+slept = block_slept? do
+  play 50
+  sleep 1
+  play 62
+  sleep 2
+end
+
+puts slept #=> Returns true as there were sleeps in the block",
+"
+in_thread do
+  sleep 1
+  cue :foo  # trigger a cue on a different thread
+end
+
+slept = block_slept? do
+  sync :foo  # wait for the cue before playing the note
+  play 62
+end
+
+puts slept #=> Returns true as the block contained a sync.",
+"
+slept = block_slept? do
+  play 50
+  play 62
+end
+
+puts slept #=> Returns false as there were no sleeps in the block"]
 
 
 
@@ -829,7 +1058,9 @@ end
       doc name:           :at,
           introduced:     Version.new(2,1,0),
           summary:        "Asynchronous Time. Run a block at the given time(s)",
-          doc:            "Given a list of times, run the block once after waiting each given time. If passed an optional params list, will pass each param individually to each block call. If size of params list is smaller than the times list, the param values will act as rings (rotate through). If the block is given 1 arg, the times are fed through. If the block is given 2 args, both the times and the params are fed through. A third block arg will receive the index of the time.",
+          doc:            "Given a list of times, run the block once after waiting each given time. If passed an optional params list, will pass each param individually to each block call. If size of params list is smaller than the times list, the param values will act as rings (rotate through). If the block is given 1 arg, the times are fed through. If the block is given 2 args, both the times and the params are fed through. A third block arg will receive the index of the time.
+
+Note, all code within the block is executed in its own thread. Therefore despite inheriting all thread locals such as the random stream and ticks, modifications will be isolated to the block and will not affect external code.",
           args:           [[:times, :list],
                            [:params, :list]],
           opts:           nil,
@@ -837,6 +1068,11 @@ end
           requires_block: true,
           async_block:    true,
           examples:       ["
+  at 4 do
+    sample :ambi_choir    # play sample after waiting for 4 beats
+  end
+  ",
+  "
   at [1, 2, 4] do  # plays a note after waiting 1 beat,
     play 75           # then after 1 more beat,
   end                 # then after 2 more beats (4 beats total)
@@ -871,7 +1107,31 @@ end
   at [0, 0.5, 2], [:a, :b] do |t, b, idx|  #If you specify the block with 3 args, it will pass through the time, the param and the index
     puts [t, b, idx] #=> prints out [0, :a, 0], [0.5, :b, 1], then [2, :a, 2]
   end
-  "
+  ",
+  " # at does not consume & interfere with the outer random stream
+puts \"main: \", rand  # 0.75006103515625
+rand_back
+at 1 do         # the random stream inside the at block is separate and
+                # isolated from the outer stream.
+  puts \"at:\", rand # 0.9287109375
+  puts \"at:\", rand # 0.1043701171875
+end
+
+sleep 2
+puts \"main: \", rand # value is still 0.75006103515625
+",
+
+"
+            # Each block run within at has its own isolated random stream:
+at [1, 2] do
+            # first time round (after 1 beat) prints:
+  puts rand # 0.9287109375
+  puts rand # 0.1043701171875
+end
+            # second time round (after 2 beats) prints:
+            # 0.1043701171875
+            # 0.764617919921875
+"
       ]
 
 
@@ -900,17 +1160,29 @@ end
 
 
       def spark_graph(*values)
-        if values.first.is_a?(Array) && values.length == 1
+        if (values.first.is_a?(Array) || values.first.is_a?(SonicPi::Core::RingVector)) && values.length == 1
           values = values.first
         end
 
         return "" if values.length == 0
         return "spark error: can't use nested arrays" if Array(values).flatten.length != Array(values).length
-        return "spark error: arguments should be numeric" if values.any? {|x| not (x.is_a? Numeric) }
 
         #implementation stolen from @jcromartie https://gist.github.com/jcromartie/1367091
         @ticks = %w[▁ ▂ ▃ ▄ ▅ ▆ ▇]
-        values = values.map { |x| x.to_f rescue 0.0 }
+        values = values.map do |x|
+          case x
+          when TrueClass
+            1
+          when FalseClass
+            0
+          else
+            begin
+              x.to_f
+            rescue NoMethodError
+              0
+            end
+          end
+        end
         min = values.min
         range = values.max - values.min
         scale = @ticks.length - 1
@@ -1147,13 +1419,34 @@ end
 
 
 
-      def print(output)
+      def inspect(*msgs)
+        output = msgs.map{|m| m.inspect}.join(", ")
+        __delayed_user_message output
+      end
+      doc name:          :inspect,
+          introduced:     Version.new(2,8,0),
+          summary:       "Display inspected information in the output pane",
+          args:          [[:output, :anything]],
+          opts:          nil,
+          accepts_block: false,
+          intro_fn:       true,
+          doc:           "Displays the information you specify as an inspected string inside the output pane. This can be a number, symbol, or a string itself.",
+          examples:      [
+  "print \"hello there\" #=> will print the string \"hello there\" to the output pane with quotes",
+  "print 5               #=> will print the number 5 to the output pane",
+  "print :foo            #=> will print the :foo to the output pane"]
+
+
+
+
+      def print(*msgs)
+        output = msgs.map{|m| m.to_s}.join(" ")
         __delayed_user_message output
       end
       doc name:          :print,
           introduced:     Version.new(2,0,0),
           summary:       "Display a message in the output pane",
-          args:          [[:output, :string]],
+          args:          [[:output, :anything]],
           opts:          nil,
           accepts_block: false,
           intro_fn:       true,
@@ -1166,13 +1459,14 @@ end
 
 
 
-      def puts(output)
+      def puts(*msgs)
+        output = msgs.map{|m| m.to_s}.join(" ")
         __delayed_user_message output
       end
       doc name:           :puts,
           introduced:     Version.new(2,0,0),
           summary:        "Display a message in the output pane",
-          args:           [[:output, :string]],
+          args:           [[:output, :anything]],
           opts:           nil,
           accepts_block:  false,
           intro_fn:       true,
@@ -1561,6 +1855,8 @@ end
 
       def use_random_seed(seed, &block)
         raise "use_random_seed does not work with a block. Perhaps you meant with_random_seed" if block
+        Thread.current.thread_variable_set :sonic_pi_spider_new_thread_random_gen_idx, 0
+
         SonicPi::Core::SPRand.set_seed! seed
       end
       doc name:          :use_random_seed,
@@ -1611,10 +1907,15 @@ end
 
       def with_random_seed(seed, &block)
         raise "with_random_seed requires a block. Perhaps you meant use_random_seed" unless block
+        new_thread_gen_idx = Thread.current.thread_variable_get :sonic_pi_spider_new_thread_random_gen_idx
+
         current_seed, current_idx = SonicPi::Core::SPRand.get_seed_and_idx
         SonicPi::Core::SPRand.set_seed! seed
-        block.call
+        Thread.current.thread_variable_set :sonic_pi_spider_new_thread_random_gen_idx, 0
+        res = block.call
         SonicPi::Core::SPRand.set_seed! current_seed, current_idx
+        Thread.current.thread_variable_set :sonic_pi_spider_new_thread_random_gen_idx, new_thread_gen_idx
+        res
       end
       doc name:           :with_random_seed,
           introduced:     Version.new(2,0,0),
@@ -1791,8 +2092,9 @@ end
         current_mul = Thread.current.thread_variable_get(:sonic_pi_spider_sleep_mul)
         sleep_mul = 60.0 / bpm
         Thread.current.thread_variable_set(:sonic_pi_spider_sleep_mul, sleep_mul)
-        block.call
+        res = block.call
         Thread.current.thread_variable_set(:sonic_pi_spider_sleep_mul, current_mul)
+        res
       end
       doc name:           :with_bpm,
           introduced:     Version.new(2,0,0),
@@ -1848,8 +2150,9 @@ end
         current_mul = Thread.current.thread_variable_get(:sonic_pi_spider_sleep_mul)
         new_mul = current_mul.to_f / mul
         Thread.current.thread_variable_set(:sonic_pi_spider_sleep_mul, new_mul)
-        block.call
+        res = block.call
         Thread.current.thread_variable_set(:sonic_pi_spider_sleep_mul, current_mul)
+        res
       end
       doc name:           :with_bpm_mul,
           introduced:     Version.new(2,3,0),
@@ -1952,6 +2255,32 @@ end
   "    ]
 
 
+      def current_random_seed
+        SonicPi::Core::SPRand.get_seed_plus_idx
+      end
+      doc name:          :current_random_seed,
+          introduced:    Version.new(2,10,0),
+          summary:       "Get current random seed",
+          doc:           "Returns the current random seed.
+
+This can be set via the fns `use_random_seed` and `with_random_seed. It is incremented every time you use the random number generator via fns such as `choose` and `rand`.",
+          args:          [],
+          opts:          nil,
+          accepts_block: false,
+          examples:      ["
+  puts current_random_seed # Print out the current random seed",
+"
+## Resetting the seed back to a known place
+puts rand               #=>  0.75006103515625
+puts rand               #=>  0.733917236328125
+a = current_random_seed # Grab the current seed
+puts rand               #=> 0.464202880859375
+puts rand               #=> 0.24249267578125
+use_random_seed a       # Restore the seed
+                        # we'll now get the same random values:
+puts rand               #=> 0.464202880859375
+puts rand               #=> 0.24249267578125
+"]
 
 
       def current_bpm
@@ -1960,7 +2289,9 @@ end
       doc name:          :current_bpm,
           introduced:    Version.new(2,0,0),
           summary:       "Get current tempo",
-          doc:           "Returns the current tempo as a bpm value.",
+          doc:           "Returns the current tempo as a bpm value.
+
+This can be set via the fns `use_bpm`, `with_bpm`, `use_sample_bpm` and `with_sample_bpm`.",
           args:          [],
           opts:          nil,
           accepts_block: false,
@@ -1976,7 +2307,9 @@ end
       doc name:          :current_beat_duration,
           introduced:    Version.new(2,6,0),
           summary:       "Duration of current beat",
-          doc:           "Get the duration of the current beat in seconds. This is the actual length of time which will elapse with `sleep 1`.",
+          doc:           "Get the duration of the current beat in seconds. This is the actual length of time which will elapse with `sleep 1`.
+
+Affected by calls to `use_bpm`, `with_bpm`, `use_sample_bpm` and `with_sample_bpm`.",
           args:          [],
           opts:          nil,
           accepts_block: false,
@@ -2007,6 +2340,28 @@ end
   play 62
   sleep rt(1)  # bypasses bpm scaling and sleeps for a second
   play 72"]
+
+
+
+
+      def bt(t)
+        t * Thread.current.thread_variable_get(:sonic_pi_spider_sleep_mul)
+      end
+      doc name:          :bt,
+          introduced:    Version.new(2,8,0),
+          summary:       "Beat time conversion",
+          doc:           "Beat time representation. Scales the time to the current BPM. Useful for adding bpm scaling",
+          args:          [[:seconds, :number]],
+          opts:          nil,
+          accepts_block: false,
+          examples:      ["
+  use_bpm 120  # Set the BPM to be double the default
+  puts bt(1) # 0.5
+  use_bpm 60   # BPM is now default
+  puts bt(1) # 1
+  use_bpm 30   # BPM is now half the default
+  puts bt(1) # 2
+"]
 
 
 
@@ -2064,7 +2419,7 @@ end
       end
       doc name:           :sleep,
           introduced:     Version.new(2,0,0),
-          summary:        "Wait for duration",
+          summary:        "Wait for beat duration",
           doc:            "Wait for a number of beats before triggering the next command. Beats are converted to seconds by scaling to the current bpm setting.",
           args:           [[:beats, :number]],
           opts:           nil,
@@ -2146,9 +2501,9 @@ end
 
         unless Thread.current.thread_variable_get(:sonic_pi_suppress_cue_logging)
           if args_h.empty?
-            __delayed_highlight_message "cue #{cue_id.to_sym.inspect}"
+            __delayed_highlight_message "cue #{cue_id.inspect}"
           else
-            __delayed_highlight_message "cue #{cue_id.to_sym.inspect}, #{arg_h_pp(args_h)}"
+            __delayed_highlight_message "cue #{cue_id.inspect}, #{arg_h_pp(args_h)}"
           end
         end
 
@@ -2228,9 +2583,8 @@ end
       ]
 
 
-
       def sync(cue_ids, opts={})
-        cue_ids = [cue_ids] if cue_ids.is_a?(Symbol) || cue_ids.is_a?(String)
+        cue_ids = [cue_ids] if cue_ids.is_a?(Symbol) || cue_ids.is_a?(String) || cue_ids.is_a?(SPSym)
         raise "sync needs at least one cue id to sync on. You specified 0" unless cue_ids.size > 0
         Thread.current.thread_variable_set(:sonic_pi_spider_synced, true)
         p = Promise.new
@@ -2241,7 +2595,7 @@ end
 
         unless Thread.current.thread_variable_get(:sonic_pi_suppress_cue_logging)
           if cue_ids.size == 1
-            __delayed_highlight3_message "sync #{cue_ids.first.to_sym.inspect}"
+            __delayed_highlight3_message "sync #{cue_ids.first.inspect}"
           else
             ids_list = cue_ids.map{|cid| cid.to_sym}
             __delayed_highlight3_message "sync #{ids_list.inspect}"
@@ -2253,7 +2607,7 @@ end
         payload = p.get
         time = payload[:time]
         sleep_mul = payload[:sleep_mul]
-        bpm_sync = opts.has_key?(:bpm_sync) ? opts[:bpm_sync] : true
+        bpm_sync = opts.has_key?(:bpm_sync) ? opts[:bpm_sync] : false
         run_id = payload[:run]
         cue_map = payload[:cue_map]
         cue_map = cue_map.dup if cue_map
@@ -2277,7 +2631,7 @@ end
           summary:        "Sync with other threads",
           doc:            "Pause/block the current thread until a `cue` heartbeat with a matching `cue_id` is received. When a matching `cue` message is received, unblock the current thread, and continue execution with the virtual time set to match the thread that sent the `cue` heartbeat. The current thread is therefore synced to the `cue` thread. If multiple cue ids are passed as arguments, it will `sync` on the first matching `cue_id`. By default the BPM of the cueing thread is inherited. This can be disabled using the bpm_sync: opt.",
           args:           [[:cue_id, :symbol]],
-          opts:           {:bpm_sync => "Inherit the BPM of the cueing thread. Default is true"},
+          opts:           {:bpm_sync => "Inherit the BPM of the cueing thread. Default is false"},
           accepts_block:  false,
           advances_time:  true,
           examples:       ["
@@ -2346,6 +2700,7 @@ end
         args_h = resolve_synth_opts_hash_or_array(opts)
         name = args_h[:name]
         delay = args_h[:delay]
+        sync_sym = args_h[:sync]
 
         raise "in_thread's delay: opt must be a number, got #{delay.inspect}" if delay && !delay.is_a?(Numeric)
 
@@ -2441,6 +2796,7 @@ end
           # Actually run the thread code specified by the user!
           begin
             sleep delay if delay
+            sync sync_sym if sync_sym
             block.call
             # ensure delayed jobs and messages are honoured for this
             # thread:
@@ -2486,10 +2842,14 @@ end
       doc name:           :in_thread,
           introduced:     Version.new(2,0,0),
           summary:        "Run code block at the same time",
-          doc:            "Execute a given block (between `do` ... `end`) in a new thread. Use for playing multiple 'parts' at once. Each new thread created inherits all the use/with defaults of the parent thread such as the time, current synth, bpm, default synth args, etc. Despite inheriting defaults from the parent thread, any modifications of the defaults in the new thread will *not* affect the parent thread. Threads may be named with the `name:` optional arg. Named threads will print their name in the logging pane when they print their activity. Finally, if you attempt to create a new named thread with a name that is already in use by another executing thread, no new thread will be created.",
+          doc:            "Execute a given block (between `do` ... `end`) in a new thread. Use for playing multiple 'parts' at once. Each new thread created inherits all the use/with defaults of the parent thread such as the time, current synth, bpm, default synth args, etc. Despite inheriting defaults from the parent thread, any modifications of the defaults in the new thread will *not* affect the parent thread. Threads may be named with the `name:` optional arg. Named threads will print their name in the logging pane when they print their activity. If you attempt to create a new named thread with a name that is already in use by another executing thread, no new thread will be created.
+
+It is possible to delay the initial trigger of the thread on creation with both the `delay:` and `sync:` opts. See their respective docstrings. If both `delay:` and `sync:` are specified, on initial thread creation first the delay will be honoured and then the sync.
+",
           args:           [],
           opts:           {:name  => "Make this thread a named thread with name. If a thread with this name already exists, a new thread will not be created.",
-                           :delay => "Initial delay in beats before the thread starts. Default is 0."},
+                           :delay => "Initial delay in beats before the thread starts. Default is 0.",
+                           :sync => "Initial sync symbol. Will sync with this symbol before the thread starts."},
           accepts_block:  true,
           requires_block: true,
           async_block:    true,
@@ -2591,7 +2951,87 @@ end
   "    ]
 
 
+      def assert(arg, msg=nil)
+        unless arg
+          error_msg =  "Assert failed! #{msg}"
+          raise AssertionError, error_msg
+        end
 
+        arg
+      end
+      doc name:           :assert,
+          introduced:     Version.new(2,8,0),
+          summary:        "Ensure arg is valid",
+          doc:            "Raises an exception if the argument is either nil or false.",
+          args:           [[:arg, :anything]],
+          alt_args:       [[:arg, :anything],[:error_msg, :string]],
+          opts:           nil,
+          accepts_block:  false,
+          examples:       ["
+# Simple assertions
+assert true   # As true is neither nil or false, this assertion passes
+assert 1      # Similarly, 1 passes
+assert \"foo\" # As do string
+assert false  # This will raise an exception
+",
+"
+# Communicating error messages
+assert false, \"oops\" # This will raise an exception containing the message \"oops\"
+",
+
+"
+# More interesting assertions
+assert (1 + 1) == 2 # Ensure that arithmetic is sane!
+assert [:a, :b, :c].size == 3 # ensure lists can be correctly counted
+"]
+
+      def assert_equal(arg1, arg2, msg=nil)
+        unless arg1 == arg2
+          error_msg =  "Assert failed! #{arg1.inspect} is not equal to #{arg2.inspect}. #{msg}"
+          raise AssertionError, error_msg
+        end
+        arg1
+      end
+      doc name:           :assert_equal,
+          introduced:     Version.new(2,8,0),
+          summary:        "Ensure args are equal",
+          doc:            "Raises an exception if both arguments aren't equal. ",
+          args:           [[:arg1, :anything], [:arg2, :anything]],
+          alt_args:       [[:arg1, :anything], [:arg2, :anything],[:error_msg, :string]],
+          opts:           nil,
+          accepts_block:  false,
+          examples:       ["
+# Simple assertions
+assert_equal 1, 1
+",
+"
+# More interesting assertions
+assert_equal 1 + 1, 2 # Ensure that arithmetic is sane!
+assert_equal [:a, :b, :c].size,  3 # ensure lists can be correctly counted
+",
+
+"
+# Add messages to the exceptions
+assert_equal 3, 5, \"something is seriously wrong!\"
+" ]
+
+      def load_buffer(path)
+        path = File.expand_path(path.to_s)
+        raise "Unable to load buffer - no file found with path: #{path}" unless File.exists?(path)
+        buf = __current_job_info[:workspace]
+        __info "loading #{buf} with #{path}"
+        __replace_buffer(buf, File.read(path))
+      end
+
+      def load_example(example_name)
+        path = Dir[examples_path + '/**/' + example_name.to_s + '.rb'].first
+        raise "Error - no example found with name: #{example_name.inspect}" unless path
+        buf = __current_job_info[:workspace]
+        __info "loading #{buf} with #{path}"
+        title = ActiveSupport::Inflector.titleize(example_name)
+        __replace_buffer(buf, "# #{title}\n" + File.read(path))
+
+      end
 
       def __on_thread_death(&block)
         gc_jobs = Thread.current.thread_variable_get(:sonic_pi__not_inherited__spider_in_thread_gc_jobs) || []

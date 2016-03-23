@@ -12,6 +12,7 @@ technical and otherwise) with time, advice, and wisdom:
 * [Rachel Drury](https://twitter.com/Rachel_Drury)
 * [Juneau Projects](http://www.juneauprojects.co.uk)
 * Stephan Lachowsky
+* [Paul Winstanley](https://twitter.com/SCCMentor)
 
 ## Organisations
 
@@ -20,6 +21,7 @@ The following organisations have kindly contributed to Sonic Pi:
 * [The Raspberry Pi Foundation](http://www.raspberrypi.org)
 * [The Broadcom Foundation](http://www.broadcomfoundation.org)
 * [The University of Cambridge Computer Laboratory](http://www.cl.cam.ac.uk)
+* [Nesta](http://www.nesta.org.uk)
 
 ## Developer Contributions
 
@@ -28,39 +30,61 @@ the following developers who have donated their time and effort to help
 grow and improve the Sonic Pi code base:
 
 * [Hanno Zulla](https://github.com/hzulla)
-* [Martin Keegan](https://github.com/mk270)
 * [Ethan Crawford](https://github.com/ethancrawford)
-* [Nicolas Dermine](https://github.com/nicoder)
-* [Wolfgang Werner](https://github.com/wwerner)
-* [Robin Newman](https://github.com/rbnpi)
-* [Clare Macrae](https://github.com/claremacrae)
 * [Łukasz Siwiński](https://github.com/hopbit)
-* [G. Martin Butz](https://github.com/mbutz)
+* [Martin Keegan](https://github.com/mk270)
+* [Nicolas Dermine](https://github.com/nicoder)
+* [Ricardo Pozo](https://github.com/thraex41)
+* [Kenichi Kanai](https://github.com/kn1kn1)
+* [Robin Newman](https://github.com/rbnpi)
+* [Wolfgang Werner](https://github.com/wwerner)
+* [Clare Macrae](https://github.com/claremacrae)
 * [Hannes Fritz](https://github.com/hztirf)
+* [Petter Reinholdtsen](https://github.com/petterreinholdtsen)
+* [G. Martin Butz](https://github.com/mbutz)
+* [Marco Giordano](https://github.com/marco-giordano)
+* [Keiko Machiya](https://github.com/keikomachiya)
 * [Martin Zeilinger](https://github.com/st01c)
 * [Steve Traylen](https://github.com/traylenator)
+* [Chris Ford](https://github.com/ctford)
+* [Mistral Contrastin](https://github.com/madgen)
+* [Christoph B. Wurzinger](https://github.com/chbw)
 * [Ben Nuttall](https://github.com/bennuttall)
+* [Jose Añasco](https://github.com/merongivian)
 * [Will Stephenson](https://github.com/wstephenson)
-* [Kenichi Kanai](https://github.com/kn1kn1)
+* [Frobby](https://github.com/frobby)
+* [Michel Echevres](https://github.com/echevresm)
 * [Katie Miller](https://github.com/codemiller)
 * [Bruce Adams](https://github.com/bruceadams)
 * [Daniel Canelhas](https://github.com/dcanelhas)
-* [John Lawrence Aspden](https://github.com/johnlawrenceaspden)
-* [Hrafnkell Eiríksson](https://github.com/hrafnkelle)
-* [Jose Añasco](https://github.com/merongivian)
-* [Joseph Haig](https://github.com/jrmhaig)
 * [James Smith](https://github.com/Nanomancer)
-* [Graham Taylor](https://github.com/vinnievg)
-* [Alex McLean](https://github.com/yaxu)
-* [Cosmin Stroe](https://github.com/cstroe)
-* [Emlyn Corrin](https://github.com/emlyn)
-* [Nigel Michki](https://github.com/nigeil)
-* [Karl Hiner](https://github.com/khiner)
-* [Ruzsa Balázs](https://github.com/cellux)
-* [Christian Perfect](https://github.com/christianp)
-* [Ivan Zarea](https://github.com/minivan)
 * [Ryan Bigg](https://github.com/radar)
+* [Joseph Haig](https://github.com/jrmhaig)
+* [Graham Taylor](https://github.com/vinnievg)
 * [Morgan Owens](https://github.com/equiamos)
+* [Cosmin Stroe](https://github.com/cstroe)
+* [Aspasia Beneti](https://github.com/aspasia)
+* [Ivan Zarea](https://github.com/minivan)
+* [Karl Hiner](https://github.com/khiner)
 * [Serge Stinckwich](https://github.com/SergeStinckwich)
+* [András Németh](https://github.com/nemethandras)
+* [Nigel Michki](https://github.com/nigeil)
+* [Christian Perfect](https://github.com/christianp)
+* [Hrafnkell Eiríksson](https://github.com/hrafnkelle)
+* [Ruzsa Balázs](https://github.com/cellux)
+* [Enrike Hurtado](https://github.com/enrike)
+* [Alex McLean](https://github.com/yaxu)
+* [Russell Jones](https://github.com/Russell-Jones)
+* [Michael Fulton](https://github.com/emu4hire)
+* [Tomasz Nurkiewicz](https://github.com/nurkiewicz)
+* [Emlyn Corrin](https://github.com/emlyn)
+* [John Lawrence Aspden](https://github.com/johnlawrenceaspden)
+* [Eugene Kovalev](https://github.com/wl8dr3)
+
+
+
+
+
+
 
 

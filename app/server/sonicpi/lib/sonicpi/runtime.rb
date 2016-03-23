@@ -3,7 +3,7 @@
 # Full project source: https://github.com/samaaron/sonic-pi
 # License: https://github.com/samaaron/sonic-pi/blob/master/LICENSE.md
 #
-# Copyright 2013, 2014, 2015 by Sam Aaron (http://sam.aaron.name).
+# Copyright 2013, 2014, 2015, 2016 by Sam Aaron (http://sam.aaron.name).
 # All rights reserved.
 #
 # Permission is granted for use, copying, modification, and
@@ -23,10 +23,10 @@ require_relative "gitsave"
 require_relative "lifecyclehooks"
 require_relative "version"
 require_relative "sthread"
-require_relative "oscval"
 require_relative "version"
 require_relative "config/settings"
 require_relative "preparser"
+require_relative "spsym"
 
 #require_relative "oscevent"
 #require_relative "stream"
@@ -43,79 +43,12 @@ require 'active_support/core_ext/integer/inflections'
 module SonicPi
   class Stop < StandardError ; end
 
-  class Runtime
-
-    attr_reader :event_queue
-    include Util
-    include ActiveSupport
-
-    def initialize(hostname, port, msg_queue, max_concurrent_synths, user_methods)
-      @git_hash = __extract_git_hash
-      gh_short = @git_hash ? "-#{@git_hash[0, 5]}" : ""
-      @settings = Config::Settings.new(user_settings_path)
-      @version = Version.new(2, 8, 0, "dev#{gh_short}")
-      @server_version = __server_version
-      @life_hooks = LifeCycleHooks.new
-      @msg_queue = msg_queue
-      @event_queue = SizedQueue.new(20)
-      @keypress_handlers = {}
-      @events = IncomingEvents.new
-      @sync_counter = Counter.new
-      @job_counter = Counter.new
-      @job_subthreads = {}
-      @job_main_threads = {}
-      @named_subthreads = {}
-      @job_subthread_mutex = Mutex.new
-      @user_jobs = Jobs.new
-      @sync_real_sleep_time = 0.05
-      @user_methods = user_methods
-      @run_start_time = 0
-      @session_id = SecureRandom.uuid
-      @snippets = {}
-
-      @gui_heartbeats = {}
-      @gui_last_heartbeat = nil
-      @gitsave = GitSave.new(project_path)
-
-      @event_t = Thread.new do
-        Thread.current.thread_variable_set(:sonic_pi_thread_group, :event_loop)
-        loop do
-          event = @event_queue.pop
-          __handle_event event
-        end
-      end
-      __info "Welcome to Sonic Pi"
-      __info "Session #{@session_id[0..7]}"
-      date = Time.now
-      __info "#{date.strftime("%A")} #{date.day.ordinalize} #{date.strftime("%B, %Y")}"
-      __info "%02d:%02d, %s" % [date.hour, date.min, date.zone]
-
-      __info "#{@version} Ready..."
-
-      __info [
-"Hello, somewhere in the world
-   the sun is shining
-   for you right now.",
-"Hello, it's lovely to see
-   you again. I do hope that
-   you're well.",
-"Turn your head towards the sun
-   and the shadows
-   will fall
-   behind you."].sample
-
-
-
-
-      __print_version_outdated_info if @version < @server_version
-
-      load_snippets(snippets_path, true)
-    end
-
+  module RuntimeMethods
 
 
     ## Not officially part of the API
     ## Probably should be moved somewhere else
+    @@stop_job_mutex = Mutex.new
 
     def load_snippets(path=snippets_path, quiet=false)
       path = File.expand_path(path)
@@ -173,8 +106,16 @@ module SonicPi
     end
 
     def __update_gui_version_info_now
+      __info "Checking for new version of Sonic Pi"
       v = __check_for_server_version_now
+      if @version < v
+        __print_version_outdated_info(v)
+      else
+        __info "Your version of Sonic Pi is the latest: #{@version}"
+      end
+
       @msg_queue.push({:type => :version, :version => @version.to_s, :version_num =>  @version.to_i, :latest_version => v.to_s, :latest_version_num => v.to_i, :last_checked => __last_update_check})
+
     end
 
     def __current_version
@@ -185,27 +126,33 @@ module SonicPi
       Time.at(last_update = @settings.get(:last_update_check_time).to_i)
     end
 
-    def __check_for_server_version_now(url="http://sonic-pi.net/static/info/latest_version.txt")
+    def __check_for_server_version_now
+
       begin
         params = {:uuid => global_uuid,
                   :ruby_platform => RUBY_PLATFORM,
                   :ruby_version => RUBY_VERSION,
                   :ruby_patchlevel => RUBY_PATCHLEVEL,
                   :sonic_pi_version => @version.to_s}
-        uri = URI.parse(url)
-        uri.query = URI.encode_www_form( params )
-        response = Net::HTTP.get_response uri
-        v_string = response.body
-        v = Version.init_from_string(v_string)
+        ver_uri = URI.parse(url="http://sonic-pi.net/static/info/latest_version.txt")
+        msg_uri = URI.parse(url="http://sonic-pi.net/static/info/message.txt")
+        ver_uri.query = URI.encode_www_form( params )
+        msg_uri.query = URI.encode_www_form( params )
+        ver_response = Net::HTTP.get_response ver_uri
+        msg_response = Net::HTTP.get_response msg_uri
+        ver = ver_response.body
+        v = Version.init_from_string(ver)
+        msg = msg_response.body
         @settings.set(:last_update_check_time, Time.now.to_i)
         @settings.set(:last_seen_server_version, v.to_s)
+        @settings.set(:message, msg)
         v
       rescue
         __local_cached_server_version
       end
     end
 
-    def __server_version(url="http://sonic-pi.net/static/info/latest_version.txt")
+    def __server_version
       return Version.new(0) if @settings.get(:no_update_checking)
 
       # Only check for updates at most once every 2 weeks
@@ -217,7 +164,7 @@ module SonicPi
         return __local_cached_server_version if Time.now < ts_2_weeks_later
       end
 
-      __check_for_server_version_now(url)
+      __check_for_server_version_now
     end
 
     def __local_cached_server_version
@@ -228,9 +175,9 @@ module SonicPi
       end
     end
 
-    def __print_version_outdated_info
+    def __print_version_outdated_info(v=@server_version)
       __info "Your version of Sonic Pi is outdated"
-      __info "The latest is #{@server_version}"
+      __info "The latest is #{v}"
       __info "Please consider updating..."
     end
 
@@ -245,8 +192,8 @@ module SonicPi
       end
     end
 
-    def __info(s)
-      @msg_queue.push({:type => :info, :val => s.to_s})
+    def __info(s, style=0)
+      @msg_queue.push({:type => :info, :style => style, :val => s.to_s})
     end
 
     def __multi_message(m)
@@ -375,7 +322,7 @@ module SonicPi
     end
 
     def __current_run_time
-      Thread.current.thread_variable_get(:sonic_pi_spider_time) - @run_start_time
+      Thread.current.thread_variable_get(:sonic_pi_spider_time) - @global_start_time
     end
 
     def __current_local_run_time
@@ -424,17 +371,30 @@ module SonicPi
     end
 
     def __stop_job(j)
-      job_subthreads_kill(j)
-      @user_jobs.kill_job j
-      @life_hooks.killed(j)
-      @life_hooks.exit(j)
-      @msg_queue.push({type: :job, jobid: j, action: :killed})
+      __info "Stopping job #{j}"
+      # Only allow a job to be stopped once
+      @@stop_job_mutex.synchronize do
+        if @user_jobs.running?(j)
+          job_subthreads_kill(j)
+          @user_jobs.kill_job j
+          @life_hooks.killed(j)
+          @life_hooks.exit(j)
+          @msg_queue.push({type: :job, jobid: j, action: :killed})
+        end
+      end
     end
 
     def __stop_jobs
       __info "Stopping all runs..."
       @user_jobs.each_id do |id|
         __stop_job id
+      end
+    end
+
+    def __stop_other_jobs
+      __info "Stopping all runs other than #{__current_job_id}..."
+      @user_jobs.each_id do |id|
+        __stop_job id unless id == __current_job_id
       end
     end
 
@@ -495,7 +455,7 @@ module SonicPi
           orig_completion_lines = completion_text.lines.to_a
           completion_line_pre = completion_line[0...(point_index - completion_key.length)]
           completion_line_post = completion_line[point_index..-1]
-          completion_text = completion_line_pre + completion_text + completion_line_post
+          completion_text = completion_line_pre + completion_text + completion_line_post + (completion_line_post.empty? ? "" : "\n")
           completion_lines = completion_text.lines.to_a
           point_line = point_line + point_line_offset
 
@@ -582,17 +542,16 @@ module SonicPi
       # Otherwise comment
       lines = buf_lines[start_line..finish_line]
 
-      if(lines.all?{|el| el.match(/^\s*#.*/) || el.match(/^\s*$/)})
-        # need to uncomment
+      if(lines.all?{|el| el.match(/^\s*#.*?/) || el.match(/^\s*$/)})
+        # need to uncomment ##| style comments
         lines = lines.map do |l|
-          m = l.match(/^(\s*)#+[ ]?(.*)/)
+          m = l.match(/^(\s*)#[#\| ]*(.*)/)
           if m
             m[1] + m[2] + "\n"
           else
             l
           end
         end
-
       else
         # need to comment
         # find shortest amount of whitespace at beginning of line
@@ -603,7 +562,7 @@ module SonicPi
         end
 
         lines.each do |l|
-          l[ws] = "# #{l[ws]}" unless l.match(/^(\s*)$/)
+          l[ws] = "##| #{l[ws]}" unless l.match(/^(\s*)$/)
         end
       end
 
@@ -615,6 +574,14 @@ module SonicPi
       buf = buf + "\n"
       buf_lines = buf.lines.to_a
 
+      buf_lines = buf_lines.map! do |l|
+        if l.match /^\s*$/
+          "_____sonic_pi_tmp_insert_____\n"
+        else
+          l
+        end
+      end
+      buf = buf_lines.join
       ## ensure point isn't beyond buffer
       max_buf_idx = buf_lines.size - 1
       line  = max_buf_idx if line > max_buf_idx
@@ -631,6 +598,9 @@ module SonicPi
       # calculate amount of whitespace at start of beautified line
       beautiful_lines = beautiful.lines.to_a
       beautiful_len = beautiful_lines.size
+      beautiful_lines.map! {|l| l.slice! "_____sonic_pi_tmp_insert_____" ; l}
+
+      beautiful = beautiful_lines.join
       post_line = beautiful_lines[line]
       post_ws_len = post_line[/\A */].size
 
@@ -663,17 +633,7 @@ module SonicPi
     end
 
     def __save_buffer(id, content)
-      filename = id + '.spi'
-      path = project_path + "/" + filename
-      content = filter_for_save(content)
-      File.open(path, 'w') {|f| f.write(content) }
-      begin
-        @gitsave.save!(filename, content, "#{@version} -- #{@session_id} -- ")
-      rescue Exception => e
-        ##TODO: remove this and ensure that git saving actually works
-        ##instead of cowardly hiding the issue!
-      end
-
+      @save_queue << [id, content]
     end
 
     def __disable_update_checker
@@ -730,7 +690,7 @@ module SonicPi
           start_t_prom.deliver! now
           Thread.current.thread_variable_set :sonic_pi_spider_time, now
           Thread.current.thread_variable_set :sonic_pi_spider_start_time, now
-          @run_start_time = now if num_running_jobs == 1
+          @global_start_time = now if num_running_jobs == 1
           __info "Starting run #{id}"
           code = PreParser.preparse(code)
 
@@ -786,11 +746,12 @@ module SonicPi
     end
 
     def __exit
+      log "Runtime - shutting down..."
+      @event_t.kill
+      log "Runtime - stopping all jobs..."
       __stop_jobs
       @msg_queue.push({:type => :exit, :jobid => __current_job_id, :jobinfo => __current_job_info})
-      @event_t.kill
-
-
+      log "Runtime - shutdown completed."
     end
 
     def __describe_threads
@@ -910,5 +871,102 @@ module SonicPi
       source = source << "\n" unless source.end_with? "\n"
       RBeautify.beautify_string :ruby, source
     end
+
+
   end
+
+  class Runtime
+
+    attr_reader :event_queue
+    include Util
+    include ActiveSupport
+    include RuntimeMethods
+
+    def initialize(hostname, port, msg_queue, max_concurrent_synths, user_methods)
+      @git_hash = __extract_git_hash
+      gh_short = @git_hash ? "-#{@git_hash[0, 5]}" : ""
+      @settings = Config::Settings.new(user_settings_path)
+      @version = Version.new(2, 10, 0, "dev#{gh_short}")
+      @server_version = __server_version
+      @life_hooks = LifeCycleHooks.new
+      @msg_queue = msg_queue
+      @event_queue = SizedQueue.new(20)
+      @keypress_handlers = {}
+      @events = IncomingEvents.new
+      @sync_counter = Counter.new
+      @job_counter = Counter.new
+      @job_subthreads = {}
+      @job_main_threads = {}
+      @named_subthreads = {}
+      @job_subthread_mutex = Mutex.new
+      @user_jobs = Jobs.new
+      @sync_real_sleep_time = 0.05
+      @user_methods = user_methods
+      @global_start_time = 0
+      @session_id = SecureRandom.uuid
+      @snippets = {}
+
+      @gui_heartbeats = {}
+      @gui_last_heartbeat = nil
+      @gitsave = GitSave.new(project_path)
+
+      @save_queue = SizedQueue.new(20)
+
+      @event_t = Thread.new do
+        Thread.current.thread_variable_set(:sonic_pi_thread_group, :event_loop)
+        loop do
+          event = @event_queue.pop
+          __handle_event event
+        end
+      end
+
+      @save_t = Thread.new do
+        Thread.current.thread_variable_set(:sonic_pi_thread_group, :save_loop)
+        loop do
+          event = @save_queue.pop
+          id, content = *event
+          filename = id + '.spi'
+          path = project_path + "/" + filename
+          content = filter_for_save(content)
+          begin
+            File.open(path, 'w') {|f| f.write(content) }
+            @gitsave.save!(filename, content, "#{@version} -- #{@session_id} -- ")
+          rescue Exception => e
+            ##TODO: remove this and ensure that git saving actually works
+            ##instead of cowardly hiding the issue!
+          end
+        end
+      end
+      __info "Welcome to Sonic Pi", 1
+      __info "Session #{@session_id[0..7]}"
+      date = Time.now
+      __info "#{date.strftime("%A")} #{date.day.ordinalize} #{date.strftime("%B, %Y")}"
+      __info "%02d:%02d, %s" % [date.hour, date.min, date.zone]
+
+      __info [
+"Hello, somewhere in the world
+   the sun is shining
+   for you right now.",
+"Hello, it's lovely to see
+   you again. I do hope that
+   you're well.",
+"Turn your head towards the sun
+   and the shadows
+   will fall
+   behind you."].sample, 1
+
+      msg = @settings.get(:message) || ""
+      msg = msg.strip
+
+      __print_version_outdated_info if @version < @server_version
+
+      __info msg unless msg.empty?
+
+      load_snippets(snippets_path, true)
+    end
+
+
+  end
+
+
 end
